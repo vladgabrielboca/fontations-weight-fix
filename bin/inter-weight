@@ -1,0 +1,47 @@
+#!/bin/bash
+# Swap Inter Regular/Italic and Adwaita Sans Regular/Italic for heavier builds.
+# Other weights (Medium, Bold, ...) stay stock.
+#   inter-weight 430|450|475|500 -> install that weight
+#   inter-weight 400             -> stock Inter, stock (variable) Adwaita Sans
+#   inter-weight                 -> show what is installed
+# https://github.com/vladgabrielboca/fontations-weight-fix
+set -e
+store=~/.local/share/inter-weights
+fonts=~/.local/share/fonts/inter
+adw=~/.local/share/fonts/adwaita-heavy
+adwconf=~/.config/fontconfig/conf.d/74-adwaita-heavy.conf
+adwsrc=$(cat "$store/adwaita-src-dir" 2>/dev/null || true)
+
+if [ -z "$1" ]; then
+  cur=unknown
+  for w in "$store"/[0-9]*/; do cmp -s "$w/Inter-Regular.ttf" "$fonts/Inter-Regular.ttf" && cur=$(basename "$w"); done
+  acur=400
+  for w in "$store"/[0-9]*/; do cmp -s "$w/AdwaitaSans-Regular.ttf" "$adw/AdwaitaSans-Regular.ttf" 2>/dev/null && acur=$(basename "$w"); done
+  [ -n "$adwsrc" ] || acur="n/a (no system Adwaita Sans)"
+  echo "Inter weight: $cur; Adwaita Sans weight: $acur"
+  exit
+fi
+
+[ -d "$store/$1" ] || { echo "available: $(ls -d "$store"/[0-9]*/ | xargs -n1 basename | tr '\n' ' ')"; exit 1; }
+mkdir -p "$fonts"
+cp "$store/$1/Inter-Regular.ttf" "$store/$1/Inter-Italic.ttf" "$fonts/"
+
+rm -rf "$adw" "$adwconf"
+if [ "$1" != 400 ] && [ -n "$adwsrc" ] && [ -f "$store/$1/AdwaitaSans-Regular.ttf" ]; then
+  mkdir -p "$adw" "$(dirname "$adwconf")"
+  cp "$store"/adwaita-static/*.ttf "$store/$1"/AdwaitaSans-*.ttf "$adw/"
+  cat > "$adwconf" <<XML
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <description>Hide the stock variable Adwaita Sans; the full static family in
+       ~/.local/share/fonts/adwaita-heavy replaces it (Regular/Italic heavier). Managed by inter-weight.</description>
+  <selectfont><rejectfont>
+    <glob>$adwsrc/AdwaitaSans-Regular.ttf</glob>
+    <glob>$adwsrc/AdwaitaSans-Italic.ttf</glob>
+  </rejectfont></selectfont>
+</fontconfig>
+XML
+fi
+fc-cache -f >/dev/null
+echo "Weight $1 installed. Fully restart Chromium, Electron and GTK apps to see it."
